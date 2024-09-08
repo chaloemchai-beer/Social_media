@@ -1,16 +1,33 @@
+"use client"
+
 import VideocamIcon from '@mui/icons-material/Videocam';
 import SearchIcon from '@mui/icons-material/Search';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Contact from './common/Contact';
+import { faker } from "@faker-js/faker";
+import {useEffect, useState} from "react"
 
-const contacts = [
-    {
-        src: "https://archive.smashing.media/assets/344dbf88-fdf9-42bb-adb4-46f01eedd629/d0a4481f-e801-4cb7-9daa-17cdae32cc89/icon-design-21-opt.png",
-        name: "test"
-    }
-]
+type ContactType = {
+  id: string;
+  src: string;
+  name: string;
+};
 
-const Widgets = () => {
+const Widgets: React.FC = () => {
+  const [contact, setContact] = useState<ContactType[]>([]);
+
+  useEffect(() => {
+    const generateContacts = (): void => {
+      const newContact: ContactType[] = Array.from({ length: 8 }, () => ({
+        id: faker.string.uuid(),
+        name: faker.person.firstName(),
+        src: faker.image.avatar()
+      }));
+      setContact(newContact);
+    };
+
+    generateContacts();
+  }, []);
   return (
     <div className="hidden lg:flex flex-col w-60 p-2 mt-5">
       <div className="flex justify-between items-center text-gray-500 mb-5">
@@ -22,7 +39,7 @@ const Widgets = () => {
         </div>
       </div>
 
-      {contacts.map(contact => (
+      {contact.map(contact => (
         <Contact key={contact.src}
         src={contact.src} name={contact.name} />
       ))}

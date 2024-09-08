@@ -1,9 +1,21 @@
-import ThumbUpIcon from '@mui/icons-material/ThumbUp';
-import ChatIcon from '@mui/icons-material/Chat';
-import ShareIcon from '@mui/icons-material/Share';
+import ThumbUpIcon from "@mui/icons-material/ThumbUp";
+import ChatIcon from "@mui/icons-material/Chat";
+import ShareIcon from "@mui/icons-material/Share";
 import Image from "next/image";
 
-const Post = ({ name, message, email, postImage, image, timestamp }: any) => {
+type PostProps = {
+  name: string;
+  message: string;
+  email: string;
+  postImage: string | null;
+  image: string;
+  timestamp: string;
+};
+
+const Post: React.FC<PostProps> = ({ name, message, email, postImage, image, timestamp }) => {
+  const date = new Date(timestamp);
+  const formattedDate = date.toLocaleDateString(); // แสดงวันที่ในรูปแบบที่ต้องการ
+
   return (
     <div className="flex flex-col">
       <div className="p-5 bg-white mt-5 rounded-t-2xl shadow-sm">
@@ -17,9 +29,7 @@ const Post = ({ name, message, email, postImage, image, timestamp }: any) => {
           />
           <div>
             <p className="font-medium">{name}</p>
-            <p className="text-xs text-gray-400">
-              {new Date(timestamp?.toDate()).toLocaleDateString()}
-            </p>
+            <p className="text-xs text-gray-400">{formattedDate}</p>
           </div>
         </div>
 
@@ -33,19 +43,21 @@ const Post = ({ name, message, email, postImage, image, timestamp }: any) => {
       )}
 
       {/* Footer of post */}
-      <div className="flex justify-between items-center rounded-b-2xl bg-white
-      shadow-md text-gray-400 border-t">
+      <div
+        className="flex justify-between items-center rounded-b-2xl bg-white
+        shadow-md text-gray-400 border-t"
+      >
         <div className="inputIcon rounded-none rounded-bl-2xl">
-            <ThumbUpIcon className="h4" />
-            <p className="text-xs sm:text-base">Like</p>
+          <ThumbUpIcon className="h4" />
+          <p className="text-xs sm:text-base">Like</p>
         </div>
         <div className="inputIcon rounded-none rounded-bl-2xl">
-            <ChatIcon className="h4" />
-            <p className="text-xs sm:text-base">Comment</p>
+          <ChatIcon className="h4" />
+          <p className="text-xs sm:text-base">Comment</p>
         </div>
         <div className="inputIcon rounded-none rounded-bl-2xl">
-            <ShareIcon className="h4" />
-            <p className="text-xs sm:text-base">Share</p>
+          <ShareIcon className="h4" />
+          <p className="text-xs sm:text-base">Share</p>
         </div>
       </div>
     </div>

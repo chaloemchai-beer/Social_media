@@ -1,15 +1,33 @@
+"use client"
+
 import StoryCard from "./common/StoryCard";
+import {useState, useEffect} from "react"
+import { faker } from "@faker-js/faker";
 
-const stories = [
-  {
-    name: "Example",
-    src: "https://archive.smashing.media/assets/344dbf88-fdf9-42bb-adb4-46f01eedd629/d0a4481f-e801-4cb7-9daa-17cdae32cc89/icon-design-21-opt.png",
-    profile:
-      "https://archive.smashing.media/assets/344dbf88-fdf9-42bb-adb4-46f01eedd629/d0a4481f-e801-4cb7-9daa-17cdae32cc89/icon-design-21-opt.png",
-  },
-];
+type StoryType = {
+  id: string;
+  name: string;
+  src: string;
+  profile: string | null;
+};
 
-const Stories = () => {
+const Stories: React.FC = () => {
+  const [stories, setStories] = useState<StoryType[]>([]);
+
+  useEffect(() => {
+    const generateStories = (): void => {
+      const newStories: StoryType[] = Array.from({ length: 5 }, () => ({
+        id: faker.string.uuid(),
+        name: faker.person.firstName(),
+        src: faker.image.url(),
+        profile: faker.image.avatar(),
+      }));
+      setStories(newStories);
+    };
+
+    generateStories();
+  }, []);
+
   return (
     <div className="flex justify-center space-x-3 mx-auto">
       {stories.map((story) => (
