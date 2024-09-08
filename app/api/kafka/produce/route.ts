@@ -8,7 +8,7 @@ const kafka = new Kafka({
 });
 
 const producer = kafka.producer({
-  createPartitioner: Partitioners.LegacyPartitioner
+  createPartitioner: Partitioners.LegacyPartitioner,
 });
 
 const prisma = new PrismaClient();
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     await producer.disconnect();
 
-    // บันทึกข้อความลงในฐานข้อมูล PostgreSQL
+    // Save the message to the PostgreSQL database
     await prisma.message.create({
       data: {
         message: message || 'Default message',
@@ -34,8 +34,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Message sent to Kafka and saved in PostgreSQL!' });
   } catch (error) {
+    // Assert the error type to Error so that TypeScript can recognize error.message
+    const errorMessage = (error as Error).message || 'An unknown error occurred';
     return NextResponse.json(
-      { error: 'Failed to send message', details: error.message },
+      { error: 'Failed to send message', details: errorMessage },
       { status: 500 }
     );
   }
