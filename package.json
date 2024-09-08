@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run postinstall & next dev",
-    "build": "next build",
+    "dev": "next dev",
+    "build": "npm run postinstall & next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
