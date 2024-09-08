@@ -37,3 +37,12 @@ yarn-error.log*
 next-env.d.ts
 
 totorial
+docker-compose-kafka.yml
+docker-compose-elasticsearch.yml
+docker-compose-scan.yml
+docker-compose-sonarqube.yml
+docker-compose-strapi.yml
+docker-compose.yml
+mongod.conf
+sonar-project.properties
+next.config.mjs

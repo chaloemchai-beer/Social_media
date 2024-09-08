@@ -77,3 +77,11 @@ model Authenticator {
 
   @@id([userId, credentialID])
 }
+
+model Message {
+  messageId String @id @default(cuid())
+  message String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
