@@ -9,10 +9,13 @@ generator client {
 
 model User {
   id            String          @id @default(cuid())
-  name          String?
+  firstName     String
+  lastName      String
   password      String?
   email         String          @unique
   emailVerified DateTime?
+  birthday      DateTime
+  gender        String
   image         String?
   accounts      Account[]
   sessions      Session[]
@@ -80,7 +83,7 @@ model Authenticator {
 
 model Message {
   messageId String @id @default(cuid())
-  message String
+  message   String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

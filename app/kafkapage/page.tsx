@@ -1,10 +1,23 @@
-"use client"
-import { useState } from 'react';
+"use client";
 
-const KafkaPage = () => {
-  const [message, setMessage] = useState('');
-  const [response, setResponse] = useState('');
-  const [error, setError] = useState('');
+import { useState } from 'react';
+import { useSession, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+const KafkaPage: React.FC = () => {
+  const [message, setMessage] = useState<string>('');
+  const [response, setResponse] = useState<string>('');
+  const [error, setError] = useState<string>('');
+
+  const { data: session, status } = useSession(); // Type annotations for session and status
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/login");
+    }
+  }, [status, router]);
 
   const sendMessage = async () => {
     try {
@@ -16,12 +29,12 @@ const KafkaPage = () => {
         body: JSON.stringify({ message }),
       });
 
-      // ตรวจสอบสถานะ HTTP response ก่อนทำการ parse JSON
+      // Check HTTP response status before parsing JSON
       if (res.ok) {
         const data = await res.json();
         setResponse(data.message);
       } else {
-        const errorData = await res.json();  // ในกรณีที่ response มี JSON ข้อผิดพลาด
+        const errorData = await res.json();  // Handle JSON error response
         setError(errorData.error || 'Failed to send message.');
       }
     } catch (err) {
@@ -29,19 +42,25 @@ const KafkaPage = () => {
     }
   };
 
+  if (status === "loading") {
+    return <div>Loading...</div>; // Optional: loading state
+  }
+
   return (
-    <div>
-      <h1>Send Message to Kafka</h1>
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Enter message"
-      />
-      <button onClick={sendMessage}>Send</button>
-      {response && <p>{response}</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-    </div>
+    session?.user && (
+      <div>
+        <h1>Send Message to Kafka</h1>
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Enter message"
+        />
+        <button onClick={sendMessage}>Send</button>
+        {response && <p>{response}</p>}
+        {error && <p style={{ color: 'red' }}>{error}</p>}
+      </div>
+    )
   );
 };
 

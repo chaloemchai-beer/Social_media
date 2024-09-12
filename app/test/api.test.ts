@@ -1,5 +1,5 @@
 import { createMocks } from 'node-mocks-http';
-import { POST } from '../api/kafka/produce/route'; // ใช้ named export
+import { POST } from '../api/searchs/produce/route'; // ใช้ named export
 import { describe, it, expect } from 'vitest';
 
 describe('POST /api/kafka/produce', () => {
