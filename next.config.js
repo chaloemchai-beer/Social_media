@@ -1,11 +1,14 @@
 // @ts-check
  
+const isDev = process.env.NODE_ENV !== 'production'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
     ignoreBuildErrors: true
   },
   images: {
+    // Disable server-side optimizer in dev to avoid external fetch/DNS errors
+    unoptimized: isDev,
     remotePatterns: [
       {
         protocol: 'https',
