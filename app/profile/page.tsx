@@ -36,6 +36,7 @@ export default function ProfilePage() {
     const res = await fetch('/api/profile');
     if (res.ok) {
       const p = await res.json();
+      console.log(p)
       setProfile(p);
     }
   }
@@ -75,7 +76,7 @@ export default function ProfilePage() {
       {/* Cover */}
       <div className="relative h-72 md:h-96 bg-gradient-to-b from-slate-400 to-slate-600">
         {profile?.coverUrl && (
-          <Image src={profile.coverUrl} alt="Cover" fill style={{ objectFit: 'cover' }} />
+          <Image key={profile.coverUrl} src={profile.coverUrl} alt="Cover" fill style={{ objectFit: 'cover' }} unoptimized />
         )}
         <div className="absolute right-4 bottom-4">
           <label className="bg-white/90 hover:bg-white text-sm px-3 py-1 rounded cursor-pointer shadow">
@@ -93,7 +94,7 @@ export default function ProfilePage() {
           <div className="flex items-end gap-4">
             <div className="relative w-32 h-32 -mt-16 md:-mt-20 rounded-full ring-4 ring-white bg-blue-500 flex items-center justify-center text-white text-3xl font-bold z-20">
               {profile?.avatarUrl ? (
-                <Image src={profile.avatarUrl} alt="Avatar" fill className="rounded-full" style={{ objectFit: 'cover' }} />
+                <Image key={profile.avatarUrl} src={profile.avatarUrl} alt="Avatar" fill className="rounded-full" style={{ objectFit: 'cover' }} unoptimized />
               ) : (
                 <span>{displayName?.charAt(0)?.toUpperCase() || 'U'}</span>
               )}

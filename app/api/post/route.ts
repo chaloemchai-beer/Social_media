@@ -3,9 +3,9 @@ import mongoose from 'mongoose';
 import Post from '../../../models/Post';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/authOptions"
-import fs from 'fs/promises';
-import path from 'path';
+import { uploadToSupabase, supabaseObjectPath } from '../../../lib/supabase';
 import Profile from '../../../models/Profile';
+import { sbInsertPost, sbFetchPosts } from '../../../lib/supabase-db';
 
 // Ensure MongoDB connection
 const connectToMongoDB = async () => {
@@ -38,24 +38,15 @@ export const POST = async (req: Request) => {
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      
-      const filename = Date.now() + '-' + file.name.replace(/\s/g, '_');
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-      
-      // Ensure the upload directory exists
-      await fs.mkdir(uploadDir, { recursive: true });
-      
-      const filePath = path.join(uploadDir, filename);
-      await fs.writeFile(filePath, buffer);
+      const key = supabaseObjectPath(`posts/${session.user.email || 'anon'}`, file.name)
+      const publicUrl = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream')
 
-      const fileUrl = `/uploads/${filename}`;
-      
       if (file.type.startsWith('image')) {
-        imageUrls.push(fileUrl);
-        imageUrl = imageUrl || fileUrl; // keep first as legacy
+        imageUrls.push(publicUrl);
+        imageUrl = imageUrl || publicUrl; // keep first as legacy
       } else if (file.type.startsWith('video')) {
         // Keep only the last video if multiple are supplied
-        videoUrl = fileUrl;
+        videoUrl = publicUrl;
       }
     }
 
@@ -82,8 +73,19 @@ export const POST = async (req: Request) => {
       createdAt: new Date(),
     };
 
-    const post = new Post(postData);
-    await post.save();
+    const USE_SB = process.env.USE_SUPABASE_DB === 'true'
+    if (USE_SB) {
+      await sbInsertPost({
+        text: postData.text,
+        image_urls: postData.imageUrls,
+        video_url: postData.videoUrl,
+        email: postData.email,
+        name: postData.name,
+      })
+    } else {
+      const post = new Post(postData);
+      await post.save();
+    }
     return NextResponse.json({ message: 'Post created successfully!' });
   } catch (error) {
     console.error('Error creating post:', error);
@@ -99,6 +101,11 @@ export async function GET(request: Request) {
     const email = session?.user?.email;
     const { searchParams } = new URL(request.url);
     const filterEmail = searchParams.get('email') || undefined;
+    const USE_SB = process.env.USE_SUPABASE_DB === 'true'
+    if (USE_SB) {
+      const shaped = await sbFetchPosts(filterEmail || undefined)
+      return NextResponse.json(shaped)
+    }
     const findQuery: any = {};
     if (filterEmail) findQuery.email = filterEmail;
     const posts = await Post.find(findQuery).sort({ createdAt: -1 }).lean();

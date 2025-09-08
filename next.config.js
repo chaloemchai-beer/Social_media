@@ -12,6 +12,12 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
+        hostname: 'zpbwjwikdzxcseumoiwk.supabase.co',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
         hostname: 'archive.smashing.media',
         port: '',
         pathname: '/**',

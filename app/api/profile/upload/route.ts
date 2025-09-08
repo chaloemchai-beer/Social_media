@@ -3,8 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../../../lib/authOptions';
 import mongoose from 'mongoose';
 import Profile from '../../../../models/Profile';
-import fs from 'fs/promises';
-import path from 'path';
+import { uploadToSupabase, supabaseObjectPath } from '../../../../lib/supabase';
+import { sbUpsertProfile } from '../../../../lib/supabase-db';
 
 async function connect() {
   if (mongoose.connections[0]?.readyState) return;
@@ -26,19 +26,32 @@ export async function POST(req: Request) {
 
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const safeName = file.name.replace(/\s/g, '_');
-  const filename = `${Date.now()}-${safeName}`;
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-  await fs.mkdir(uploadDir, { recursive: true });
-  const filePath = path.join(uploadDir, filename);
-  await fs.writeFile(filePath, buffer);
-  const fileUrl = `/uploads/${filename}`;
+  const key = supabaseObjectPath(`profile/${email}`, file.name);
+  const fileUrl = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream');
 
   const set: any = {};
   if (type === 'avatar') set.avatarUrl = fileUrl;
   else if (type === 'cover') set.coverUrl = fileUrl;
   set.updatedAt = new Date();
-  const doc = await Profile.findOneAndUpdate({ email }, { $set: set }, { new: true, upsert: true }).lean();
-  return NextResponse.json({ url: fileUrl, profile: doc });
+  const USE_SB = process.env.USE_SUPABASE_DB === 'true'
+  let profile: any = null
+  if (USE_SB) {
+    const patch: any = { email }
+    if (type === 'avatar') patch.avatar_url = fileUrl
+    if (type === 'cover') patch.cover_url = fileUrl
+    const sb = await sbUpsertProfile(patch)
+    profile = {
+      email,
+      name: sb.name || '',
+      bio: sb.bio || '',
+      location: sb.location || '',
+      website: sb.website || '',
+      avatarUrl: (sb as any).avatar_url || null,
+      coverUrl: (sb as any).cover_url || null,
+      friendsCount: (sb as any).friends_count || 0,
+    }
+  } else {
+    profile = await Profile.findOneAndUpdate({ email }, { $set: set }, { new: true, upsert: true }).lean();
+  }
+  return NextResponse.json({ url: fileUrl, profile });
 }
-
