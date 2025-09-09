@@ -8,7 +8,7 @@ const nextConfig = {
   },
   images: {
     // Disable server-side optimizer in dev to avoid external fetch/DNS errors
-    unoptimized: isDev,
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
