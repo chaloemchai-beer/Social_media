@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 
 import "./globals.css";
 import SessionProvider from "../components/SessionProvider";
+import ChatWidget from "../components/ChatWidget";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,7 +22,11 @@ export default async function RootLayout({
   return (
     <SessionProvider session={session}>
       <html lang="en">
-        <body className={`${inter.className} bg-gray-100 text-gray-900 min-h-screen`}>{children}</body>
+        <body className={`${inter.className} bg-gray-100 text-gray-900 min-h-screen`}>
+          {children}
+          {/* Floating Messenger-like chat */}
+          <ChatWidget />
+        </body>
       </html>
     </SessionProvider>
   );

@@ -100,7 +100,14 @@ const Header = () => {
           {displayName || session?.user?.name || session?.user?.email || "Guest"}
         </p>
         <GridViewIcon className="hidden xl:inline-flex p-2 h-10 w-10 bg-gray-200 rounded-full text-gray-700 cursor-pointer hover:bg-gray-300" />
-        <MessageIcon className="hidden xl:inline-flex p-2 h-10 w-10 bg-gray-200 rounded-full text-gray-700 cursor-pointer hover:bg-gray-300" />
+        <MessageIcon
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('open-chat-widget'))
+            }
+          }}
+          className="hidden xl:inline-flex p-2 h-10 w-10 bg-gray-200 rounded-full text-gray-700 cursor-pointer hover:bg-gray-300"
+        />
         <NotificationsIcon className="hidden xl:inline-flex p-2 h-10 w-10 bg-gray-200 rounded-full text-gray-700 cursor-pointer hover:bg-gray-300" />
         <Dropdown signOut={handleSignOut} /> {/* Add Dropdown component */}
       </div>
