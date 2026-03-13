@@ -83,7 +83,7 @@ export default function LoginPage() {
         {/* Bottom quote */}
         <div className="relative z-10">
           <p className="text-purple-200 text-sm italic">
-            "The world is more connected than ever."
+            &ldquo;The world is more connected than ever.&rdquo;
           </p>
         </div>
       </div>

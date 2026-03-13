@@ -112,6 +112,7 @@ export default function ChatWidget() {
       window.removeEventListener('open-chat-widget', handler)
       window.removeEventListener('open-chat-with', handlerWithEmail as EventListener)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Socket.IO

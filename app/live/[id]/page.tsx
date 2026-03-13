@@ -102,7 +102,7 @@ export default function LiveViewer({ params }: { params: { id: string } }) {
       await fetch('/api/socket').catch(() => {});
       if (aborted) return;
 
-      socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4001', {
+      socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || '', {
         transports: ['websocket'],
       });
       socketRef.current = socket;

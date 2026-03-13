@@ -145,6 +145,7 @@ const Post: React.FC<PostProps> = ({ id, name, message, email, images, videoUrl,
     if (url === commentLinkUrl) return;
     const timer = setTimeout(() => setCommentLinkUrl(url), 600);
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commentInput]);
 
   // Lightbox state

@@ -81,7 +81,7 @@ export default function ForgotPasswordPage() {
 
         <div className="relative z-10">
           <p className="text-purple-200 text-sm italic">
-            "Security is not a product, but a process."
+            &ldquo;Security is not a product, but a process.&rdquo;
           </p>
         </div>
       </div>

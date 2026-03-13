@@ -199,7 +199,7 @@ const Feed: React.FC = () => {
                     ) : 'Load more posts'}
                   </button>
                 ) : (
-                  <p className="text-gray-600 text-xs py-2">You're all caught up ✓</p>
+                  <p className="text-gray-600 text-xs py-2">You&apos;re all caught up ✓</p>
                 )}
               </div>
             )}

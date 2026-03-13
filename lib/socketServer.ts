@@ -1,31 +1,46 @@
-import { createServer, Server as HTTPServer } from 'http'
+import { createServer, Server as HTTPServer, IncomingMessage, ServerResponse } from 'http'
 import { Server } from 'socket.io'
 
 let ioGlobal: Server | null = null
-let httpServer: HTTPServer | null = null
 
-export function getIO(): Server {
+/**
+ * Attach Socket.IO to an existing HTTP server, or create a standalone one.
+ *  - Production (custom server): pass in the HTTP server so Socket.IO shares the same port.
+ *  - Local dev (no custom server): omit the argument and a standalone server is created on SOCKET_IO_PORT.
+ */
+export function getIO(existingServer?: HTTPServer): Server {
   if (ioGlobal) return ioGlobal
   const g = global as any
   if (g.__socket_io) return (ioGlobal = g.__socket_io as Server)
 
-  const port = Number(process.env.SOCKET_IO_PORT || 4001)
   const allowOrigin = process.env.SOCKET_IO_ORIGIN || '*'
-  httpServer = createServer((req, res) => {
-    // Health check endpoint for Railway
-    if (req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ status: 'ok' }))
-      return
-    }
-    res.writeHead(404)
-    res.end()
-  })
+
+  let httpServer: HTTPServer
+  if (existingServer) {
+    httpServer = existingServer
+  } else {
+    // Standalone mode — create our own HTTP server (local dev / separate service)
+    httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok' }))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+    const port = Number(process.env.SOCKET_IO_PORT || 4001)
+    httpServer.listen(port, () => {
+      console.log(`[socket.io] standalone listening at :${port}`)
+    })
+  }
+
   const io = new Server(httpServer, {
     cors: {
       origin: allowOrigin === '*' ? true : allowOrigin,
       credentials: true,
     },
+    path: '/socket.io',
   })
 
   // Live stream host tracking: streamId -> { socketId, hostName }
@@ -58,7 +73,6 @@ export function getIO(): Server {
       const name = hostName || 'Host'
       liveHosts.set(id, { socketId: socket.id, hostName: name })
       ;(socket as any).hostingStreamId = id
-      // Wake up any viewers already waiting in the room
       socket.to(`live:${id}`).emit('live:host-ready', { hostName: name })
     })
 
@@ -68,12 +82,9 @@ export function getIO(): Server {
       socket.join(`live:${id}`)
       const host = liveHosts.get(id)
       if (host) {
-        // Tell host a new viewer is ready
         io.to(host.socketId).emit('live:viewer-joined', { viewerId: socket.id })
-        // Tell viewer the host's name
         socket.emit('live:host-info', { hostName: host.hostName })
       }
-      // If no host yet, viewer waits; host will send live:host-ready when they start
     })
 
     // Host sends offer to a specific viewer
@@ -112,7 +123,6 @@ export function getIO(): Server {
     // Host replaced a track (e.g. screen share) — notify viewers to renegotiate
     socket.on('live:track-replaced', ({ id }: { id: string }) => {
       if (!id) return
-      // Re-trigger viewer connections so they receive the new track
       const room = io.sockets.adapter.rooms.get(`live:${id}`)
       if (!room) return
       for (const viewerId of room) {
@@ -131,14 +141,8 @@ export function getIO(): Server {
     })
   })
 
-  httpServer.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`[socket.io] listening at :${port}`)
-  })
-
   // Lazily start message watcher (safe if already started)
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     require('./watch').ensureMessageWatcher?.()
   } catch {}
 
