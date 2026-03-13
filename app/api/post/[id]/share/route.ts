@@ -4,13 +4,14 @@ import { authOptions } from '../../../../../lib/authOptions';
 import { prisma } from '../../../../../lib/prisma';
 import { cacheDelPattern } from '../../../../../lib/cache';
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const { text = '' } = await req.json().catch(() => ({ text: '' }));
 
-    const original = await prisma.post.findUnique({ where: { id: params.id } });
+    const original = await prisma.post.findUnique({ where: { id } });
     if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     const [shared, updated] = await prisma.$transaction([
@@ -19,11 +20,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           text: String(text || ''),
           email: session.user.email,
           name: session.user.name || 'Anonymous',
-          sharedFromId: params.id,
+          sharedFromId: id,
         },
       }),
       prisma.post.update({
-        where: { id: params.id },
+        where: { id: id },
         data: { shareCount: { increment: 1 } },
       }),
     ]);

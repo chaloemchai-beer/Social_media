@@ -4,10 +4,11 @@ import { authOptions } from '../../../../../lib/authOptions';
 import { prisma } from '../../../../../lib/prisma';
 import { uploadToSupabase, supabaseObjectPath } from '../../../../../lib/supabase';
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const comments = await prisma.comment.findMany({
-      where: { postId: params.id },
+      where: { postId: id },
       orderBy: { createdAt: 'asc' },
       include: {
         userLikes: true,
@@ -51,8 +52,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -64,7 +66,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       return NextResponse.json({ error: 'Text or media required' }, { status: 400 });
     }
 
-    const post = await prisma.post.findUnique({ where: { id: params.id } });
+    const post = await prisma.post.findUnique({ where: { id } });
     if (!post) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     // Upload media to Supabase
@@ -91,7 +93,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const comment = await prisma.comment.create({
       data: {
-        postId: params.id,
+        postId: id,
         email: session.user.email,
         name: displayName,
         avatarUrl,

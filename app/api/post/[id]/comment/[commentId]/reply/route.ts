@@ -4,8 +4,9 @@ import { authOptions } from '../../../../../../../lib/authOptions';
 import { prisma } from '../../../../../../../lib/prisma';
 import { uploadToSupabase, supabaseObjectPath } from '../../../../../../../lib/supabase';
 
-export async function POST(req: Request, { params }: { params: { id: string; commentId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string; commentId: string }> }) {
   try {
+    const { id, commentId } = await params;
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -17,8 +18,8 @@ export async function POST(req: Request, { params }: { params: { id: string; com
       return NextResponse.json({ error: 'Text or media required' }, { status: 400 });
     }
 
-    const comment = await prisma.comment.findUnique({ where: { id: params.commentId } });
-    if (!comment || comment.postId !== params.id) {
+    const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment || comment.postId !== id) {
       return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
     }
 
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: { id: string; com
 
     const reply = await prisma.reply.create({
       data: {
-        commentId: params.commentId,
+        commentId,
         email: session.user.email,
         name: displayName,
         avatarUrl,

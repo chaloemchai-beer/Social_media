@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from 'react';
+import React, { use, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { io, Socket } from 'socket.io-client';
@@ -59,8 +59,8 @@ const STATUS_CONFIG: Record<Status, { label: string; color: string; pulse: boole
   ended:      { label: 'Stream ended',       color: 'text-gray-400',   pulse: false },
 };
 
-export default function LiveViewer({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function LiveViewer({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const { data: session } = useSession();
   const router = useRouter();
   const remoteRef = useRef<HTMLVideoElement>(null);
