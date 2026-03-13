@@ -1,21 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../../../lib/authOptions';
-import mongoose from 'mongoose';
-import Profile from '../../../../models/Profile';
+import { prisma } from '../../../../lib/prisma';
 import { uploadToSupabase, supabaseObjectPath } from '../../../../lib/supabase';
-import { sbUpsertProfile } from '../../../../lib/supabase-db';
-
-async function connect() {
-  if (mongoose.connections[0]?.readyState) return;
-  await mongoose.connect(process.env.MONGODB_URI as string);
-}
+import { cacheSet, CK, TTL } from '../../../../lib/cache';
 
 export async function POST(req: Request) {
-  await connect();
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const email = session.user.email as string;
+  const email = session.user.email;
 
   const form = await req.formData();
   const file = form.get('file') as File | null;
@@ -29,29 +22,26 @@ export async function POST(req: Request) {
   const key = supabaseObjectPath(`profile/${email}`, file.name);
   const fileUrl = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream');
 
-  const set: any = {};
-  if (type === 'avatar') set.avatarUrl = fileUrl;
-  else if (type === 'cover') set.coverUrl = fileUrl;
-  set.updatedAt = new Date();
-  const USE_SB = process.env.USE_SUPABASE_DB === 'true'
-  let profile: any = null
-  if (USE_SB) {
-    const patch: any = { email }
-    if (type === 'avatar') patch.avatar_url = fileUrl
-    if (type === 'cover') patch.cover_url = fileUrl
-    const sb = await sbUpsertProfile(patch)
-    profile = {
-      email,
-      name: sb.name || '',
-      bio: sb.bio || '',
-      location: sb.location || '',
-      website: sb.website || '',
-      avatarUrl: (sb as any).avatar_url || null,
-      coverUrl: (sb as any).cover_url || null,
-      friendsCount: (sb as any).friends_count || 0,
-    }
-  } else {
-    profile = await Profile.findOneAndUpdate({ email }, { $set: set }, { new: true, upsert: true }).lean();
-  }
-  return NextResponse.json({ url: fileUrl, profile });
+  const update: any = {};
+  if (type === 'avatar') update.avatarUrl = fileUrl;
+  else update.coverUrl = fileUrl;
+
+  const profile = await prisma.profile.upsert({
+    where: { email },
+    update,
+    create: { email, ...update },
+  });
+
+  const profileData = {
+    email: profile.email,
+    name: profile.name || '',
+    bio: profile.bio || '',
+    location: profile.location || '',
+    website: profile.website || '',
+    avatarUrl: profile.avatarUrl || null,
+    coverUrl: profile.coverUrl || null,
+    friendsCount: profile.friendsCount,
+  };
+  await cacheSet(CK.profile(email), profileData, TTL.PROFILE);
+  return NextResponse.json({ url: fileUrl, profile: profileData });
 }

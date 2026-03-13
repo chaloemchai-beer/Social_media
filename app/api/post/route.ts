@@ -1,165 +1,175 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import Post from '../../../models/Post';
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../lib/authOptions"
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '../../../lib/authOptions';
+import { prisma } from '../../../lib/prisma';
 import { uploadToSupabase, supabaseObjectPath } from '../../../lib/supabase';
-import Profile from '../../../models/Profile';
-import { sbInsertPost, sbFetchPosts } from '../../../lib/supabase-db';
+import { cacheGet, cacheSet, cacheDelPattern, TTL, CK } from '../../../lib/cache';
 
-// Ensure MongoDB connection
-const connectToMongoDB = async () => {
-  if (mongoose.connections[0].readyState) return; // If already connected
-  await mongoose.connect(process.env.MONGODB_URI as string);
-};
-
-// Handle POST request
 export const POST = async (req: Request) => {
-  await connectToMongoDB();
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !session.user?.email) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const formData = await req.formData();
     const text = formData.get('text') as string;
-    const legacyFeeling = (formData.get('feeling') as string) || undefined;
     const feelingType = (formData.get('feelingType') as string) || undefined;
     const feelingValue = (formData.get('feelingValue') as string) || undefined;
     const feelingEmoji = (formData.get('feelingEmoji') as string) || undefined;
     const files = formData.getAll('files') as File[];
 
-    let imageUrl: string | null = null; // legacy single
+    let imageUrl: string | null = null;
     const imageUrls: string[] = [];
     let videoUrl: string | null = null;
 
-    // Process uploaded files
     for (const file of files) {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const key = supabaseObjectPath(`posts/${session.user.email || 'anon'}`, file.name)
-      const publicUrl = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream')
-
-      if (file.type.startsWith('image')) {
-        imageUrls.push(publicUrl);
-        imageUrl = imageUrl || publicUrl; // keep first as legacy
-      } else if (file.type.startsWith('video')) {
-        // Keep only the last video if multiple are supplied
-        videoUrl = publicUrl;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const key = supabaseObjectPath(`posts/${session.user.email || 'anon'}`, file.name);
+        const publicUrl = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream');
+        if (file.type.startsWith('image')) {
+          imageUrls.push(publicUrl);
+          imageUrl = imageUrl || publicUrl;
+        } else if (file.type.startsWith('video')) {
+          videoUrl = publicUrl;
+        }
+      } catch (uploadErr) {
+        console.warn('Media upload failed, skipping file:', file.name, uploadErr);
       }
     }
 
-    // Resolve display name from Profile if available
-    let resolvedName: string | undefined = undefined;
-    try {
-      const prof = await Profile.findOne({ email: session.user.email }).lean();
-      if (prof?.name) resolvedName = prof.name as string;
-    } catch {}
+    // Resolve display name from Prisma Profile
+    const prof = await prisma.profile.findUnique({ where: { email: session.user.email } });
+    const resolvedName = prof?.name || session.user.name || session.user.email?.split('@')[0] || 'Anonymous';
 
-    // Create a new post object with additional user information
-    const postData: any = {
-      text,
-      imageUrl,
-      imageUrls,
-      videoUrl,
-      // support both new and legacy feeling fields
-      feeling: legacyFeeling,
-      feelingType,
-      feelingValue,
-      feelingEmoji,
-      email: session.user.email,
-      name: resolvedName || session.user.name || (session.user.email?.split('@')[0]) || 'Anonymous',
-      createdAt: new Date(),
-    };
+    const post = await prisma.post.create({
+      data: {
+        text,
+        imageUrl,
+        imageUrls,
+        videoUrl,
+        feelingType,
+        feelingValue,
+        feelingEmoji,
+        email: session.user.email,
+        name: resolvedName,
+      },
+    });
 
-    const USE_SB = process.env.USE_SUPABASE_DB === 'true'
-    if (USE_SB) {
-      await sbInsertPost({
-        text: postData.text,
-        image_urls: postData.imageUrls,
-        video_url: postData.videoUrl,
-        email: postData.email,
-        name: postData.name,
-      })
-    } else {
-      const post = new Post(postData);
-      await post.save();
-    }
-    return NextResponse.json({ message: 'Post created successfully!' });
+    // Invalidate feed caches so new post appears immediately
+    await cacheDelPattern('posts:*');
+
+    return NextResponse.json({ message: 'Post created successfully!', id: post.id });
   } catch (error) {
     console.error('Error creating post:', error);
     return NextResponse.json({ error: 'Failed to create post' }, { status: 500 });
   }
 };
 
-// Handle GET request to fetch posts
 export async function GET(request: Request) {
-  await connectToMongoDB();
   try {
     const session = await getServerSession(authOptions);
     const email = session?.user?.email;
     const { searchParams } = new URL(request.url);
     const filterEmail = searchParams.get('email') || undefined;
-    const USE_SB = process.env.USE_SUPABASE_DB === 'true'
-    if (USE_SB) {
-      const shaped = await sbFetchPosts(filterEmail || undefined)
-      return NextResponse.json(shaped)
-    }
-    const findQuery: any = {};
-    if (filterEmail) findQuery.email = filterEmail;
-    const posts = await Post.find(findQuery).sort({ createdAt: -1 }).lean();
-    const sharedIds = posts.filter((p: any) => p.sharedFrom).map((p: any) => String(p.sharedFrom));
-    const originals = sharedIds.length
-      ? await Post.find({ _id: { $in: sharedIds } }).lean()
-      : [];
-    const originalMap = new Map(originals.map((o: any) => [String(o._id), o]));
-    // Profiles for original authors too
-    const originalEmails = Array.from(new Set(originals.map((o: any) => o.email).filter(Boolean)));
-    const profForOriginals = originalEmails.length ? await Profile.find({ email: { $in: originalEmails } }).lean() : [];
-    const origNameMap = new Map(profForOriginals.map((pr: any) => [pr.email, pr.name]));
-    const origAvatarMap = new Map(profForOriginals.map((pr: any) => [pr.email, pr.avatarUrl]));
 
-    // Build profile name map for authors
-    const authorEmails = Array.from(new Set(posts.map((p: any) => p.email).filter(Boolean)));
-    const profiles = authorEmails.length ? await Profile.find({ email: { $in: authorEmails } }).lean() : [];
-    const nameMap = new Map(profiles.map((pr: any) => [pr.email, pr.name]));
-    const avatarMap = new Map(profiles.map((pr: any) => [pr.email, pr.avatarUrl]));
+    const take = Math.min(parseInt(searchParams.get('take') || '20'), 50);
+    const skip = parseInt(searchParams.get('skip') || '0');
+    const where = filterEmail ? { email: filterEmail } : {};
 
-    const shaped = posts.map((p: any) => {
-      const currentUserReaction = email
-        ? (p.userReactions || []).find((r: any) => r.email === email)?.type || null
-        : null;
-      const commentsArr = Array.isArray(p.comments) ? p.comments : [];
-      const commentCount = commentsArr.length;
-      // Keep API lean; no longer return lastComments by default
-      let sharedFrom: any = undefined;
-      if (p.sharedFrom) {
-        const o = originalMap.get(String(p.sharedFrom));
-        if (o) {
+    // Cache key includes pagination + filter so each page is cached independently
+    const cacheKey = `posts:${filterEmail || 'feed'}:${skip}:${take}`;
+    const cached = await cacheGet<any[]>(cacheKey);
+
+    let posts: any[];
+    let profiles: any[];
+
+    if (cached) {
+      // Cached data doesn't include per-user reaction — we'll resolve that below
+      posts = cached;
+      profiles = [];
+    } else {
+      const dbPosts = await prisma.post.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+        include: {
+          userReactions: {
+            select: { email: true, type: true },
+          },
+          _count: { select: { comments: true } },
+          sharedFrom: {
+            include: { _count: { select: { comments: true } } },
+          },
+        },
+      });
+
+      // Enrich with profile data from Prisma
+      const authorEmails = Array.from(new Set(dbPosts.map((p) => p.email).filter(Boolean)));
+      profiles = authorEmails.length
+        ? await prisma.profile.findMany({ where: { email: { in: authorEmails } } })
+        : [];
+      const nameMap = new Map(profiles.map((p: any) => [p.email, p.name]));
+      const avatarMap = new Map(profiles.map((p: any) => [p.email, p.avatarUrl]));
+
+      posts = dbPosts.map((p) => {
+        const reactionCounts = p.userReactions.reduce((acc, r) => {
+          acc[r.type] = (acc[r.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        let sharedFrom: any = undefined;
+        if (p.sharedFrom) {
+          const o = p.sharedFrom;
           sharedFrom = {
-            _id: o._id,
-            name: origNameMap.get(o.email) || o.name || (o.email?.split('@')[0]) || 'Anonymous',
-            avatarUrl: origAvatarMap.get(o.email) || null,
+            _id: o.id,
             email: o.email,
+            name: o.name || (o.email?.split('@')[0]) || 'Anonymous',
             text: o.text,
             imageUrl: o.imageUrl,
-            imageUrls: o.imageUrls || [],
-            videoUrl: o.videoUrl || null,
+            imageUrls: o.imageUrls,
+            videoUrl: o.videoUrl,
             createdAt: o.createdAt,
           };
         }
-      }
-      return {
-        ...p,
-        displayName: nameMap.get(p.email) || p.name || (p.email?.split('@')[0]) || 'Anonymous',
-        authorAvatarUrl: avatarMap.get(p.email) || null,
-        currentUserReaction,
-        commentCount,
-        shareCount: p.shareCount || 0,
-        sharedFrom,
-      };
-    });
+
+        return {
+          _id: p.id,
+          text: p.text,
+          imageUrl: p.imageUrl,
+          imageUrls: p.imageUrls,
+          videoUrl: p.videoUrl,
+          email: p.email,
+          name: p.name,
+          displayName: nameMap.get(p.email) || p.name || p.email?.split('@')[0] || 'Anonymous',
+          authorAvatarUrl: avatarMap.get(p.email) ?? null,
+          feelingType: p.feelingType,
+          feelingValue: p.feelingValue,
+          feelingEmoji: p.feelingEmoji,
+          shareCount: p.shareCount,
+          reactionCounts,
+          // Store all reactions so we can resolve per-user from cache
+          _reactions: p.userReactions,
+          commentCount: p._count.comments,
+          sharedFrom,
+          createdAt: p.createdAt,
+        };
+      });
+
+      await cacheSet(cacheKey, posts, TTL.POSTS);
+    }
+
+    // Resolve per-user reaction (never cached — always accurate)
+    const shaped = posts.map(({ _reactions, ...rest }) => ({
+      ...rest,
+      currentUserReaction: email
+        ? (_reactions || []).find((r: any) => r.email === email)?.type || null
+        : null,
+    }));
+
     return NextResponse.json(shaped);
   } catch (error) {
     console.error('Failed to fetch posts:', error);

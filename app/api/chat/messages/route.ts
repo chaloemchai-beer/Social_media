@@ -1,206 +1,188 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../../../../lib/authOptions'
-import { connectToMongoDB } from '../../../../lib/mongo'
-import Conversation from '../../../../models/Conversation'
-import Message from '../../../../models/Message'
-import Profile from '../../../../models/Profile'
-import mongoose from 'mongoose'
+import { prisma } from '../../../../lib/prisma'
 import { chatBus } from '../../../../lib/realtime'
-import { PrismaClient } from '@prisma/client'
 import { getIO } from '../../../../lib/socketServer'
-import { ensureMessageWatcher } from '../../../../lib/watch'
-
-const io = getIO()
-ensureMessageWatcher().catch(() => {})
 import { uploadToSupabase, supabaseObjectPath } from '../../../../lib/supabase'
+import { cacheDel, CK } from '../../../../lib/cache'
 
-const prisma = new PrismaClient()
-
+// GET /api/chat/messages?conversationId=&limit=50&before=<iso>
 export async function GET(request: Request) {
-  await connectToMongoDB()
   const session = await getServerSession(authOptions)
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const me = session.user.email
 
   const { searchParams } = new URL(request.url)
   const conversationId = searchParams.get('conversationId') || ''
   const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') || '50')))
   const before = searchParams.get('before')
 
-  if (!conversationId || !mongoose.Types.ObjectId.isValid(conversationId)) {
-    return NextResponse.json({ error: 'conversationId is required' }, { status: 400 })
-  }
+  if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
 
-  const conv: any = await Conversation.findById(conversationId).lean()
-  if (!conv || !(conv.participants || []).includes(session.user.email)) {
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } })
+  if (!conv || (conv.participantA !== me && conv.participantB !== me)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const cond: any = { conversationId }
-  if (before) {
-    const dt = new Date(before)
-    if (!isNaN(dt.getTime())) {
-      cond.createdAt = { $lt: dt }
-    }
-  }
-  const msgs = await Message.find(cond).sort({ createdAt: -1 }).limit(limit).lean()
+  const msgs = await prisma.chatMessage.findMany({
+    where: {
+      conversationId,
+      ...(before ? { createdAt: { lt: new Date(before) } } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  })
 
-  return NextResponse.json(msgs.reverse())
+  // Return oldest-first
+  return NextResponse.json(
+    msgs.reverse().map((m) => ({
+      _id: m.id,
+      conversationId: m.conversationId,
+      sender: m.sender,
+      text: m.text,
+      attachments: m.attachments,
+      createdAt: m.createdAt.toISOString(),
+    })),
+  )
 }
 
+// POST — send a message or create/find a conversation
 export async function POST(request: Request) {
-  await connectToMongoDB()
   const session = await getServerSession(authOptions)
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const contentType = request.headers.get('content-type') || ''
+  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const me = session.user.email
 
-  // Normalized input holders
+  const contentType = request.headers.get('content-type') || ''
   let to: string | undefined
-  let text: string | undefined
+  let text = ''
   let conversationId: string | undefined
   let incomingFiles: File[] = []
-  let attachmentsFromClient: string[] | undefined
   let clientId: string | undefined
 
   if (contentType.includes('application/json')) {
     const body = await request.json().catch(() => ({}))
     to = body.to
-    text = body.text
-    attachmentsFromClient = Array.isArray(body.attachments) ? body.attachments : undefined
+    text = body.text || ''
     conversationId = body.conversationId
-    clientId = typeof body.clientId === 'string' ? body.clientId : undefined
-  } else if (contentType.includes('multipart/form-data')) {
+    clientId = body.clientId
+  } else {
     const form = await request.formData()
     to = String(form.get('to') || '') || undefined
-    text = String(form.get('text') || '') || undefined
+    text = String(form.get('text') || '')
     conversationId = String(form.get('conversationId') || '') || undefined
-    const cid = form.get('clientId')
-    clientId = typeof cid === 'string' ? cid : undefined
-    // collect files from field name 'file' or 'files'
-    const collected: File[] = []
-    const filesA = form.getAll('file')
-    const filesB = form.getAll('files')
-    for (const v of [...filesA, ...filesB]) {
-      if (v instanceof File) collected.push(v)
+    clientId = String(form.get('clientId') || '') || undefined
+    for (const v of [...form.getAll('file'), ...form.getAll('files')]) {
+      if (v instanceof File) incomingFiles.push(v)
     }
-    incomingFiles = collected
   }
 
-  if (!text && !incomingFiles.length && !(attachmentsFromClient && attachmentsFromClient.length)) {
-    return NextResponse.json({ error: 'Message content is empty' }, { status: 400 })
-  }
-
-  let convId: string | null = null
-
-  if (conversationId && mongoose.Types.ObjectId.isValid(conversationId)) {
-    const conv: any = await Conversation.findById(conversationId)
-    if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    if (!conv.participants.includes(session.user.email)) {
+  // Resolve conversation
+  let conv
+  if (conversationId) {
+    conv = await prisma.conversation.findUnique({ where: { id: conversationId } })
+    if (!conv || (conv.participantA !== me && conv.participantB !== me)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
-    convId = conv._id.toString()
   } else {
     if (!to) return NextResponse.json({ error: 'Recipient required' }, { status: 400 })
-    if (to === session.user.email) return NextResponse.json({ error: 'Cannot message yourself' }, { status: 400 })
-    // Ensure recipient exists in system (Prisma User), otherwise reject
-    const user = await prisma.user.findUnique({ where: { email: to } }).catch(() => null)
-    if (!user) {
-      // As a fallback, allow if a Profile exists
-      const prof = await Profile.findOne({ email: to }).lean()
-      if (!prof) {
-        return NextResponse.json({ error: 'Recipient not found' }, { status: 404 })
-      }
-    }
-    // Find existing conversation between two participants (order-insensitive)
-    const participants = [session.user.email, to].sort()
-    let conv = await Conversation.findOne({ participants }).exec()
-    if (!conv) {
-      conv = new Conversation({ participants })
-      await conv.save()
-    }
-    convId = conv._id.toString()
+    if (to === me) return NextResponse.json({ error: 'Cannot message yourself' }, { status: 400 })
+
+    // Friends-only check
+    const friendship = await prisma.friendship.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromEmail: me, toEmail: to },
+          { fromEmail: to, toEmail: me },
+        ],
+      },
+    })
+    if (!friendship) return NextResponse.json({ error: 'You can only message friends' }, { status: 403 })
+
+    // Deterministic participant order for unique constraint
+    const [pA, pB] = [me, to].sort()
+    conv = await prisma.conversation.upsert({
+      where: { participantA_participantB: { participantA: pA, participantB: pB } },
+      update: {},
+      create: { participantA: pA, participantB: pB },
+    })
   }
 
-  // Handle attachments: upload incoming files to Supabase under chat/{convId}
+  // If no content, just return the conversation (used to open/create a chat)
+  if (!text && !incomingFiles.length) {
+    const otherEmail = conv.participantA === me ? conv.participantB : conv.participantA
+    const p = await prisma.profile.findUnique({ where: { email: otherEmail } })
+    return NextResponse.json({
+      conversationId: conv.id,
+      message: null,
+      other: { email: otherEmail, name: p?.name || otherEmail.split('@')[0], avatarUrl: p?.avatarUrl || null },
+    })
+  }
+
+  // Upload attachments
   const uploadedUrls: string[] = []
   for (const f of incomingFiles) {
     try {
-      const arrayBuffer = await f.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-      const key = supabaseObjectPath(`chat/${convId}`, f.name)
-      const url = await uploadToSupabase(key, buffer, f.type || 'application/octet-stream')
-      uploadedUrls.push(url)
+      const buf = Buffer.from(await f.arrayBuffer())
+      const key = supabaseObjectPath(`chat/${conv.id}`, f.name)
+      uploadedUrls.push(await uploadToSupabase(key, buf, f.type || 'application/octet-stream'))
     } catch {}
   }
-  const allAttachments = [...(attachmentsFromClient || []), ...uploadedUrls]
 
-  const msg = new Message({
-    conversationId: convId,
-    sender: session.user.email,
-    text: text || '',
-    attachments: allAttachments,
-    readBy: [session.user.email],
+  const msg = await prisma.chatMessage.create({
+    data: { conversationId: conv.id, sender: me, text, attachments: uploadedUrls },
   })
-  await msg.save()
 
-  await Conversation.updateOne(
-    { _id: convId },
-    { $set: { lastMessageText: text || (allAttachments.length ? 'Attachment' : ''), lastMessageAt: new Date() } }
-  )
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: {
+      lastMessageText: text || (uploadedUrls.length ? 'Attachment' : ''),
+      lastMessageAt: new Date(),
+    },
+  })
 
-  // Emit realtime to subscribers
-  const payload = { ...msg.toObject(), _id: msg._id.toString(), clientId }
-  chatBus.emit(String(convId), { type: 'message', payload })
-  try { getIO().to(`conversation:${convId}`).emit('message', payload) } catch {}
+  const payload = {
+    _id: msg.id,
+    conversationId: conv.id,
+    sender: me,
+    text: msg.text,
+    attachments: msg.attachments,
+    createdAt: msg.createdAt.toISOString(),
+    clientId,
+  }
 
-  // Emit to user inbox channels for both participants so receivers update in realtime
-  try {
-    const convDoc: any = await Conversation.findById(convId).lean()
-    const participants: string[] = (convDoc?.participants || [])
-    // Preload profiles for nicer preview
-    const profiles = await Profile.find({ email: { $in: participants } }).lean()
-    const nameMap = new Map(profiles.map((p: any) => [p.email, p.name]))
-    const avatarMap = new Map(profiles.map((p: any) => [p.email, p.avatarUrl]))
-    for (const p of participants) {
-      const otherEmail = participants.find((e) => e !== p) || ''
-      const evt = {
-        type: 'conv-updated',
-        payload: {
-          id: String(convId),
-          otherEmail,
-          otherName: nameMap.get(otherEmail) || otherEmail.split('@')[0] || 'Unknown',
-          otherAvatarUrl: avatarMap.get(otherEmail) || null,
-          lastMessageText: text || (allAttachments.length ? 'Attachment' : ''),
-          lastMessageAt: new Date().toISOString(),
-        },
-      }
-      chatBus.emit(`inbox:${p}`, evt)
-      try { getIO().to(`inbox:${p}`).emit('conv-updated', evt.payload) } catch {}
+  // Real-time: Socket.IO + SSE chatBus
+  chatBus.emit(conv.id, { type: 'message', payload })
+  try { getIO().to(`conversation:${conv.id}`).emit('message', payload) } catch {}
+
+  // Inbox updates for both participants
+  const otherEmail = conv.participantA === me ? conv.participantB : conv.participantA
+  const profiles = await prisma.profile.findMany({ where: { email: { in: [me, otherEmail] } } })
+  const profileMap = new Map(profiles.map((p) => [p.email, p]))
+
+  for (const participant of [me, otherEmail]) {
+    const other = participant === me ? otherEmail : me
+    const p = profileMap.get(other)
+    const convUpdate = {
+      id: conv.id,
+      otherEmail: other,
+      otherName: p?.name || other.split('@')[0],
+      otherAvatarUrl: p?.avatarUrl || null,
+      lastMessageText: payload.text || (uploadedUrls.length ? 'Attachment' : ''),
+      lastMessageAt: new Date().toISOString(),
     }
-  } catch {}
+    chatBus.emit(`inbox:${participant}`, { type: 'conv-updated', payload: convUpdate })
+    try { getIO().to(`inbox:${participant}`).emit('conv-updated', convUpdate) } catch {}
+  }
 
-  // Shape minimal conversation info for the client
-  let other: any = null
-  try {
-    const conv: any = await Conversation.findById(convId).lean()
-    const otherEmail = (conv?.participants || []).find((e: string) => e !== session.user.email)
-    if (otherEmail) {
-      const prof: any = await Profile.findOne({ email: otherEmail }).lean()
-      other = {
-        email: otherEmail,
-        name: prof?.name || otherEmail.split('@')[0],
-        avatarUrl: prof?.avatarUrl || null,
-      }
-    }
-  } catch {}
+  // Invalidate conversation list cache for both participants
+  await cacheDel(CK.conversations(me), CK.conversations(otherEmail))
 
+  const otherProfile = profileMap.get(otherEmail)
   return NextResponse.json({
-    conversationId: convId,
+    conversationId: conv.id,
     message: payload,
-    other,
+    other: { email: otherEmail, name: otherProfile?.name || otherEmail.split('@')[0], avatarUrl: otherProfile?.avatarUrl || null },
   })
 }

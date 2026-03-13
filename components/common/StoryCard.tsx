@@ -2,29 +2,30 @@ import Image from "next/image";
 
 const StoryCard = ({ name, src, profile }: any) => {
   return (
-    <div
-      className="relative h-14 w-14 md:h-20 md:w-20
-    lg:h-56 lg:w-32 cursor-pointer overflow-x p-3 transition duration-200
-    transform ease-in hover:scale-105 hover:animate-pulse"
-    >
+    <div className="relative w-28 h-48 flex-shrink-0 cursor-pointer rounded-2xl overflow-hidden group transition-transform duration-200 hover:scale-105 ring-1 ring-gray-800 hover:ring-violet-500/50">
+      {/* Background image */}
       <Image
-        className="absolute opacity-0 lg:opacity-100
-        rounded-full z-50 top-10"
-        src={profile}
-        width={40}
-        height={40}
-        layout="fixed"
-        alt=""
-        objectFit="cover"
-      />
-      <Image
-        className="object-cover brightness-75
-      rounded-full lg:rounded-3xl"
+        className="object-cover brightness-75 group-hover:brightness-90 transition-all duration-200"
         src={src}
-        layout="fill"
+        fill
         alt=""
       />
-      <p className="absolute opacity-0 lg:opacity-100 bottom-4 w-5/6 text-white text-sm font-bold truncate">
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+      {/* Profile avatar */}
+      {profile && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full overflow-hidden ring-2 ring-violet-500">
+          <Image
+            src={profile}
+            width={40}
+            height={40}
+            className="w-full h-full object-cover"
+            alt=""
+          />
+        </div>
+      )}
+      {/* Name */}
+      <p className="absolute bottom-3 left-0 right-0 px-2 text-white text-xs font-semibold text-center truncate">
         {name}
       </p>
     </div>

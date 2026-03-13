@@ -71,63 +71,100 @@ const FeelingPicker: React.FC<Props> = ({ open, onClose, onSelect }) => {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white w-full max-w-md rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <div className="flex gap-2">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-gray-900 border border-gray-700 w-full max-w-md rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+          <div className="flex gap-1 bg-gray-800 p-1 rounded-xl">
             <button
-              className={`px-3 py-1 rounded ${tab === "feeling" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-              onClick={() => setTab("feeling")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                tab === "feeling"
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "text-gray-400 hover:text-white"
+              }`}
+              onClick={() => { setTab("feeling"); setQuery(""); }}
             >
-              Feeling
+              😊 Feeling
             </button>
             <button
-              className={`px-3 py-1 rounded ${tab === "activity" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
-              onClick={() => setTab("activity")}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                tab === "activity"
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "text-gray-400 hover:text-white"
+              }`}
+              onClick={() => { setTab("activity"); setQuery(""); }}
             >
-              Activity
+              🎯 Activity
             </button>
           </div>
-          <button onClick={onClose} className="text-gray-600 hover:text-black">✕</button>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-500 hover:text-white hover:bg-gray-800 rounded-xl transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
+        {/* Search */}
         <div className="px-4 py-3">
-          <input
-            className="w-full border rounded px-3 py-2 text-sm"
-            placeholder={tab === "feeling" ? "Search feelings..." : "Search activities..."}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2">
+            <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              className="flex-1 bg-transparent text-white placeholder-gray-500 text-sm focus:outline-none"
+              placeholder={tab === "feeling" ? "Search feelings..." : "Search activities..."}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              autoFocus
+            />
+          </div>
         </div>
 
-        <div className="max-h-80 overflow-y-auto px-2 pb-2">
-          {tab === "feeling"
-            ? filteredFeelings.map((f) => (
-                <button
-                  key={f.label}
-                  onClick={() => onSelect({ kind: "feeling", value: f.label, emoji: f.emoji })}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 text-left"
-                >
-                  <span className="text-xl w-6 text-center">{f.emoji}</span>
-                  <span className="text-sm">{f.label}</span>
-                </button>
-              ))
-            : filteredActivities.map((a) => (
-                <button
-                  key={`${a.typeLabel}-${a.label}`}
-                  onClick={() =>
-                    onSelect({ kind: "activity", value: a.label, emoji: a.emoji, typeLabel: a.typeLabel || "" })
-                  }
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 text-left"
-                >
-                  <span className="text-xl w-6 text-center">{a.emoji}</span>
-                  <span className="text-sm">
-                    <span className="text-gray-600">{a.typeLabel} </span>
-                    {a.label}
-                  </span>
-                </button>
-              ))}
+        {/* List */}
+        <div className="max-h-72 overflow-y-auto px-2 pb-3">
+          {tab === "feeling" ? (
+            filteredFeelings.length === 0 ? (
+              <p className="text-center text-gray-500 text-sm py-6">No feelings found</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                {filteredFeelings.map((f) => (
+                  <button
+                    key={f.label}
+                    onClick={() => onSelect({ kind: "feeling", value: f.label, emoji: f.emoji })}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-gray-800 transition-colors text-left group"
+                  >
+                    <span className="text-xl w-7 text-center flex-shrink-0">{f.emoji}</span>
+                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">{f.label}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            filteredActivities.length === 0 ? (
+              <p className="text-center text-gray-500 text-sm py-6">No activities found</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1">
+                {filteredActivities.map((a) => (
+                  <button
+                    key={`${a.typeLabel}-${a.label}`}
+                    onClick={() => onSelect({ kind: "activity", value: a.label, emoji: a.emoji, typeLabel: a.typeLabel || "" })}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-xl hover:bg-gray-800 transition-colors text-left group"
+                  >
+                    <span className="text-xl w-7 text-center flex-shrink-0">{a.emoji}</span>
+                    <div className="min-w-0">
+                      <span className="text-xs text-gray-500 block">{a.typeLabel}</span>
+                      <span className="text-sm text-gray-300 group-hover:text-white transition-colors truncate block">{a.label}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
         </div>
       </div>
     </div>

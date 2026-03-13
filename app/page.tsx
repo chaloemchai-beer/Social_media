@@ -8,7 +8,6 @@ import Header from "@/components/Header";
 import Sidebar from "@/components/Sidebar";
 import Widgets from "@/components/Widgets";
 
-// Define a type for the page component
 const Page: React.FC = () => {
   const { status, data: session } = useSession();
   const router = useRouter();
@@ -22,7 +21,7 @@ const Page: React.FC = () => {
   return (
     status === "authenticated" &&
     session?.user && (
-      <div className="h-screen bg-gray-100 overflow-hidden">
+      <div className="h-screen bg-gray-950 overflow-hidden">
         <Header />
         <main className="flex">
           <Sidebar />

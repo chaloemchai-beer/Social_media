@@ -89,3 +89,164 @@ model Message {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model Profile {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  bio          String?
+  location     String?
+  website      String?
+  avatarUrl    String?
+  coverUrl     String?
+  friendsCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Post {
+  id           String   @id @default(cuid())
+  text         String
+  imageUrl     String?
+  imageUrls    String[]
+  videoUrl     String?
+  email        String
+  name         String?
+  feelingType  String?
+  feelingValue String?
+  feelingEmoji String?
+  shareCount   Int      @default(0)
+  sharedFromId String?
+  sharedFrom   Post?    @relation("PostShares", fields: [sharedFromId], references: [id])
+  shares       Post[]   @relation("PostShares")
+  createdAt    DateTime @default(now())
+
+  comments      Comment[]
+  userReactions UserReaction[]
+
+  @@index([email])
+  @@index([createdAt])
+  @@index([email, createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  email     String
+  name      String?
+  avatarUrl String?
+  text      String
+  mediaUrls String[]
+  linkUrl   String?
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  userLikes CommentLike[]
+  replies   Reply[]
+
+  @@index([postId])
+  @@index([postId, createdAt])
+  @@index([email])
+}
+
+model Reply {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  email     String
+  name      String?
+  avatarUrl String?
+  text      String
+  mediaUrls String[]
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  userLikes ReplyLike[]
+
+  @@index([commentId])
+  @@index([commentId, createdAt])
+}
+
+model UserReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  email     String
+  type      String
+  updatedAt DateTime @updatedAt
+
+  @@unique([postId, email])
+}
+
+model CommentLike {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  email     String
+  updatedAt DateTime @updatedAt
+
+  @@unique([commentId, email])
+}
+
+model ReplyLike {
+  id        String   @id @default(cuid())
+  replyId   String
+  reply     Reply    @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  email     String
+  updatedAt DateTime @updatedAt
+
+  @@unique([replyId, email])
+}
+
+model Conversation {
+  id              String        @id @default(cuid())
+  participantA    String        // lexicographically smaller email
+  participantB    String        // lexicographically larger email
+  lastMessageText String        @default("")
+  lastMessageAt   DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  messages        ChatMessage[]
+
+  @@unique([participantA, participantB])
+  @@index([participantA])
+  @@index([participantB])
+}
+
+model ChatMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         String
+  text           String       @default("")
+  attachments    String[]
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  fromEmail String
+  toEmail   String
+  status    String   // 'pending' | 'accepted'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromEmail, toEmail])
+  @@index([fromEmail])
+  @@index([toEmail])
+}
+
+model ProfileMedia {
+  id        String   @id @default(cuid())
+  email     String
+  type      String   // 'photo' | 'video' | 'live'
+  url       String
+  title     String?
+  duration  Int?     // seconds (video/live)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([email, type])
+}

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+// Use anon JWT for REST API (valid JWT format). Service key is kept for JS client if needed.
 const SUPABASE_SERVICE_KEY = (process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) as string
 const SUPABASE_BUCKET = (process.env.SUPABASE_BUCKET || 'media') as string
 
@@ -18,18 +19,10 @@ export function supabaseServer() {
 
 export async function uploadToSupabase(path: string, data: ArrayBuffer | Buffer, contentType: string): Promise<string> {
   const supabase = supabaseServer()
-  await ensureBucketExists()
-  const { error } = await supabase
-    .storage
+  const { error } = await supabase.storage
     .from(SUPABASE_BUCKET)
-    .upload(path, data, { contentType: contentType || 'application/octet-stream', upsert: false })
-  if (error) {
-    // Provide a clearer message if bucket still missing due to permissions
-    if ((error as any).statusCode === '404' || (error as any).status === 404) {
-      throw new Error(`Supabase bucket "${SUPABASE_BUCKET}" not found or not accessible with provided key`)
-    }
-    throw error
-  }
+    .upload(path, data, { contentType: contentType || 'application/octet-stream', upsert: true })
+  if (error) throw error
   const { data: pub } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(path)
   return pub.publicUrl
 }

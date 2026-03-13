@@ -3,6 +3,23 @@
 const isDev = process.env.NODE_ENV !== 'production'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Prevent webpack from bundling native-addon packages (socket.io, ws, etc.)
+  serverExternalPackages: ['socket.io', 'engine.io', 'ws', 'bufferutil', 'utf-8-validate'],
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Ensure native ws deps are never bundled — return empty object if not installed
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+        ({ request }, callback) => {
+          if (request === 'bufferutil' || request === 'utf-8-validate') {
+            return callback(null, `commonjs ${request}`)
+          }
+          callback()
+        },
+      ]
+    }
+    return config
+  },
   typescript: {
     ignoreBuildErrors: true
   },
@@ -13,6 +30,12 @@ const nextConfig = {
       {
         protocol: 'https',
         hostname: 'zpbwjwikdzxcseumoiwk.supabase.co',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'xwygeahsealzforxllfa.supabase.co',
         port: '',
         pathname: '/**',
       },

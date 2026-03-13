@@ -1,46 +1,41 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../../../../lib/authOptions'
-import { connectToMongoDB } from '../../../../lib/mongo'
-import Conversation from '../../../../models/Conversation'
-import Profile from '../../../../models/Profile'
+import { prisma } from '../../../../lib/prisma'
+import { cacheGet, cacheSet, CK, TTL } from '../../../../lib/cache'
 
 export async function GET() {
-  await connectToMongoDB()
   const session = await getServerSession(authOptions)
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const me = session.user.email
 
-  const email = session.user.email
-  const conversations = await Conversation.find({ participants: email })
-    .sort({ lastMessageAt: -1 })
-    .lean()
+  const cached = await cacheGet(CK.conversations(me))
+  if (cached) return NextResponse.json(cached)
 
-  const others = Array.from(
-    new Set(
-      conversations
-        .map((c: any) => (c.participants || []).find((p: string) => p !== email))
-        .filter(Boolean)
-    )
-  ) as string[]
+  const convs = await prisma.conversation.findMany({
+    where: { OR: [{ participantA: me }, { participantB: me }] },
+    orderBy: { lastMessageAt: 'desc' },
+  })
 
-  const profiles = others.length ? await Profile.find({ email: { $in: others } }).lean() : []
-  const nameMap = new Map(profiles.map((p: any) => [p.email, p.name]))
-  const avatarMap = new Map(profiles.map((p: any) => [p.email, p.avatarUrl]))
+  const otherEmails = convs.map((c) => (c.participantA === me ? c.participantB : c.participantA))
+  const profiles = otherEmails.length
+    ? await prisma.profile.findMany({ where: { email: { in: otherEmails } } })
+    : []
+  const profileMap = new Map(profiles.map((p) => [p.email, p]))
 
-  const shaped = conversations.map((c: any) => {
-    const otherEmail = (c.participants || []).find((p: string) => p !== email)
+  const data = convs.map((c) => {
+    const otherEmail = c.participantA === me ? c.participantB : c.participantA
+    const p = profileMap.get(otherEmail)
     return {
-      id: String(c._id),
+      id: c.id,
       otherEmail,
-      otherName: nameMap.get(otherEmail) || otherEmail?.split('@')[0] || 'Unknown',
-      otherAvatarUrl: avatarMap.get(otherEmail) || null,
-      lastMessageText: c.lastMessageText || '',
+      otherName: p?.name || otherEmail.split('@')[0],
+      otherAvatarUrl: p?.avatarUrl || null,
+      lastMessageText: c.lastMessageText,
       lastMessageAt: c.lastMessageAt,
     }
   })
 
-  return NextResponse.json(shaped)
+  await cacheSet(CK.conversations(me), data, TTL.CONVERSATIONS)
+  return NextResponse.json(data)
 }
-

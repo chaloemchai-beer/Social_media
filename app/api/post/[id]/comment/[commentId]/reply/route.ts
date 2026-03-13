@@ -1,50 +1,57 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import Post from '../../../../../../../models/Post';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../../../../../../lib/authOptions';
-import Profile from '../../../../../../../models/Profile';
-
-async function connect() {
-  if (mongoose.connections[0]?.readyState) return;
-  await mongoose.connect(process.env.MONGODB_URI as string);
-}
+import { prisma } from '../../../../../../../lib/prisma';
+import { uploadToSupabase, supabaseObjectPath } from '../../../../../../../lib/supabase';
 
 export async function POST(req: Request, { params }: { params: { id: string; commentId: string } }) {
-  await connect();
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const body = await req.json().catch(() => ({}));
-    const text = (body?.text || '').toString().trim();
-    if (!text) return NextResponse.json({ error: 'Text required' }, { status: 400 });
 
-    const post = await Post.findById(params.id);
-    if (!post) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const comment: any = post.comments.id(params.commentId);
-    if (!comment) return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+    const formData = await req.formData();
+    const text = (formData.get('text') as string || '').trim();
+    const files = formData.getAll('files') as File[];
 
-    let displayName: string | undefined = undefined;
-    let avatarUrl: string | null = null;
-    try {
-      const prof = await Profile.findOne({ email: session.user.email }).lean();
-      if (prof?.name) displayName = prof.name as string;
-      if (prof?.avatarUrl) avatarUrl = prof.avatarUrl as string;
-    } catch {}
+    if (!text && files.length === 0) {
+      return NextResponse.json({ error: 'Text or media required' }, { status: 400 });
+    }
 
-    const reply: any = {
-      email: session.user.email as string,
-      name: displayName || (session.user.name as string) || (session.user.email?.split('@')[0]) || 'Anonymous',
-      avatarUrl,
-      text,
-      createdAt: new Date(),
-    };
-    comment.replies = comment.replies || [];
-    comment.replies.push(reply);
-    await post.save();
+    const comment = await prisma.comment.findUnique({ where: { id: params.commentId } });
+    if (!comment || comment.postId !== params.id) {
+      return NextResponse.json({ error: 'Comment not found' }, { status: 404 });
+    }
 
-    const added = comment.replies[comment.replies.length - 1];
-    return NextResponse.json({ reply: added });
+    // Upload media to Supabase
+    const mediaUrls: string[] = [];
+    for (const file of files) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const key = supabaseObjectPath(`replies/${session.user.email}`, file.name);
+        const url = await uploadToSupabase(key, buffer, file.type || 'application/octet-stream');
+        mediaUrls.push(url);
+      } catch (uploadErr) {
+        console.warn('Reply media upload failed, skipping:', file.name, uploadErr);
+      }
+    }
+
+    const prof = await prisma.profile.findUnique({ where: { email: session.user.email } });
+    const displayName = prof?.name || session.user.name || session.user.email?.split('@')[0] || 'Anonymous';
+    const avatarUrl = prof?.avatarUrl ?? null;
+
+    const reply = await prisma.reply.create({
+      data: {
+        commentId: params.commentId,
+        email: session.user.email,
+        name: displayName,
+        avatarUrl,
+        text: text || '',
+        mediaUrls,
+      },
+    });
+
+    return NextResponse.json({ reply: { ...reply, _id: reply.id } });
   } catch (e) {
     console.error('Reply POST error', e);
     return NextResponse.json({ error: 'Failed to add reply' }, { status: 500 });
