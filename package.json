@@ -8,7 +8,7 @@
         "build": "npm run postinstall & next build && npm run server:build",
         "start": "node dist-server/server.js",
         "start:next": "next start",
-        "server:build": "npx tsc server.ts lib/socketServer.ts lib/watch.ts --outDir dist-server --esModuleInterop --module commonjs --moduleResolution node --skipLibCheck",
+        "server:build": "npx tsc server.ts lib/socketServer.ts lib/watch.ts --outDir dist-server --esModuleInterop --module commonjs --moduleResolution node --skipLibCheck --target es2017",
         "lint": "next lint",
         "test": "jest",
         "podman-compose": "podman compose up -d & podman compose -f docker-compose-elasticsearch.yml up -d & podman compose -f docker-compose-kafka.yml up -d",
